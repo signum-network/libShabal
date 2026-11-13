@@ -12,6 +12,7 @@ mod pocc;
 mod simd;
 mod shabal;
 mod curve25519;
+mod scoops;
 
 extern "C" {
     pub fn find_best_deadline_sph(
@@ -347,6 +348,50 @@ pub extern "C" fn create_scoop(
     scoop_buffer_borrowed.copy_from_slice(&buffer[offset..offset + SCOOP_SIZE]);
 }
 
+/// Creates one PoC scoop for each (account id, nonce, scoop) triple, using SIMD instructions
+/// where available. Meant for verifying a batch of blocks, which have unrelated generators and
+/// nonces.
+///
+/// `account_ids`, `nonces` and `scoops` must hold `count` entries. Scoop `i` is written to
+/// `scoop_buffer[scoop_buffer_offset + i * 64..]`, so `scoop_buffer` must hold `count * 64` bytes
+/// from `scoop_buffer_offset`.
+///
+/// Returns 0 on success, -1 if a scoop number is not below 4096, -2 if the SIMD implementation
+/// failed (memory allocation) and -3 for null pointers.
+#[no_mangle]
+pub extern "C" fn create_scoops(
+    account_ids: *const u64,
+    nonces: *const u64,
+    scoops: *const u32,
+    count: u32,
+    poc_version: u8,
+    scoop_buffer: *mut u8,
+    scoop_buffer_offset: u32,
+) -> i32 {
+    if count == 0 {
+        return 0;
+    }
+    if account_ids.is_null() || nonces.is_null() || scoops.is_null() || scoop_buffer.is_null() {
+        return -3;
+    }
+    let count = count as usize;
+    let result = unsafe {
+        scoops::create_scoops(
+            slice::from_raw_parts(account_ids, count),
+            slice::from_raw_parts(nonces, count),
+            slice::from_raw_parts(scoops, count),
+            poc_version,
+            slice::from_raw_parts_mut(scoop_buffer.add(scoop_buffer_offset as usize), count * SCOOP_SIZE),
+        )
+    };
+    match result {
+        Ok(()) => 0,
+        Err(scoops::ScoopsError::InvalidScoop) => -1,
+        Err(scoops::ScoopsError::SimdFailure) => -2,
+        Err(scoops::ScoopsError::InvalidLength) => -3,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn curve25519_get_public_key(private_key: *mut u8, public_key_buffer: *mut u8) {
     unsafe {
@@ -387,3 +432,90 @@ pub extern "C" fn curve25519_verify(public_key: *mut u8, signature: *const u8, m
         return if curve25519::verify(public_key_borrowed, signature_borrowed, message_sha256_borrowed, enforce_canonical != 0) { 1 } else { 0 };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ACCOUNT_IDS: [u64; 3] = [6_502_115_112_683_865_257, 1, u64::MAX];
+    const NONCES: [u64; 3] = [12_345_678, 0, u64::MAX];
+    const SCOOPS: [u32; 3] = [0, 4095, 1234];
+
+    fn single_scoop(i: usize, poc_version: u8) -> Vec<u8> {
+        let mut scoop = vec![0u8; SCOOP_SIZE];
+        create_scoop(ACCOUNT_IDS[i], NONCES[i], SCOOPS[i], poc_version, scoop.as_mut_ptr(), 0);
+        scoop
+    }
+
+    #[test]
+    fn create_scoops_export_writes_scoops_at_offset() {
+        shabal_init();
+        let offset = 7;
+        let mut buffer = vec![0xAAu8; offset + 3 * SCOOP_SIZE + 5];
+        let status = create_scoops(ACCOUNT_IDS.as_ptr(), NONCES.as_ptr(), SCOOPS.as_ptr(), 3, 2,
+                                   buffer.as_mut_ptr(), offset as u32);
+        assert_eq!(status, 0);
+        assert!(buffer[..offset].iter().all(|&b| b == 0xAA), "bytes before the offset changed");
+        assert!(buffer[offset + 3 * SCOOP_SIZE..].iter().all(|&b| b == 0xAA), "bytes after the scoops changed");
+        for i in 0..3 {
+            assert_eq!(buffer[offset + i * SCOOP_SIZE..offset + (i + 1) * SCOOP_SIZE].to_vec(), single_scoop(i, 2));
+        }
+    }
+
+    #[test]
+    fn create_scoops_export_rejects_invalid_scoop() {
+        let mut buffer = vec![0u8; SCOOP_SIZE];
+        let status = create_scoops(ACCOUNT_IDS.as_ptr(), NONCES.as_ptr(), [4096u32].as_ptr(), 1, 2, buffer.as_mut_ptr(), 0);
+        assert_eq!(status, -1);
+    }
+
+    #[test]
+    fn create_scoops_export_rejects_null_pointers() {
+        let mut buffer = vec![0u8; SCOOP_SIZE];
+        let status = create_scoops(std::ptr::null(), NONCES.as_ptr(), SCOOPS.as_ptr(), 1, 2, buffer.as_mut_ptr(), 0);
+        assert_eq!(status, -3);
+    }
+
+    #[test]
+    fn create_scoops_export_with_zero_count_does_nothing() {
+        assert_eq!(create_scoops(std::ptr::null(), std::ptr::null(), std::ptr::null(), 0, 2, std::ptr::null_mut(), 0), 0);
+    }
+
+    /// Guards the SIMD deadline search against the scalar C implementation.
+    #[test]
+    fn find_best_deadline_matches_scalar_reference() {
+        shabal_init();
+        let nonce_count = 2 * 16 + 3;
+        let mut state: u32 = 0x1234_5678;
+        let mut next = || { state ^= state << 13; state ^= state >> 17; state ^= state << 5; (state & 0xFF) as u8 };
+        let scoops: Vec<u8> = (0..nonce_count * SCOOP_SIZE).map(|_| next()).collect();
+        let gensig: Vec<u8> = (0..32).map(|_| next()).collect();
+
+        let (mut deadline, mut offset) = (u64::MAX, 0u64);
+        shabal_findBestDeadlineDirect(scoops.as_ptr(), nonce_count as u64, gensig.as_ptr(), &mut deadline, &mut offset);
+        let (mut expected_deadline, mut expected_offset) = (u64::MAX, 0u64);
+        unsafe {
+            find_best_deadline_sph(scoops.as_ptr(), nonce_count as u64, gensig.as_ptr(), &mut expected_deadline, &mut expected_offset);
+        }
+        assert_eq!((deadline, offset), (expected_deadline, expected_offset));
+    }
+
+    /// Guards the SIMD plotting path (create_plots) against the single nonce path (create_plot),
+    /// e.g. after making the per-file Shabal contexts static.
+    #[test]
+    fn create_plots_matches_create_plot() {
+        shabal_init();
+        let count = 2 * 16 + 3;
+        let (account_id, start_nonce) = (ACCOUNT_IDS[0], 1_000u64);
+        for &poc_version in &[1u8, 2u8] {
+            let mut plots = vec![0u8; count * NONCE_SIZE];
+            create_plots(account_id, start_nonce, count as u64, poc_version, plots.as_mut_ptr(), 0);
+            let mut single = vec![0u8; NONCE_SIZE];
+            for n in 0..count {
+                create_plot(account_id, start_nonce + n as u64, poc_version, single.as_mut_ptr(), 0);
+                assert!(plots[n * NONCE_SIZE..(n + 1) * NONCE_SIZE] == single[..], "nonce {} poc {}", n, poc_version);
+            }
+        }
+    }
+}
+

@@ -331,3 +331,11 @@ void noncegen_avx512(char *cache,
     free(buffer);
     free(final);
 }
+
+#define NG_LANES MSHABAL512_VECTOR_SIZE
+#define NG_VEC __m512i
+#define NG_CTX_FAST mshabal512_context_fast
+#define NG_GLOBAL_FAST global_512_fast
+#define NG_HASH_FAST mshabal_hash_fast_avx512f
+#define NG_SCOOPS_FUNC noncegen_scoops_avx512f
+#include "noncegen_scoops_impl.h"
