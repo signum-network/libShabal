@@ -4,6 +4,11 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // cc prints rerun-if-env-changed lines, and with any rerun-if line cargo no longer reruns the
+    // build script when other files change. Without these, changed C sources are not recompiled.
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src");
+
     let mut shared_config = cc::Build::new();
 
     #[cfg(target_env = "msvc")]
@@ -17,9 +22,19 @@ fn main() {
 
     #[cfg(not(target_env = "msvc"))]
         shared_config.flag("-std=c99");
+    // The SIMD code reads values through pointers of other types (e.g. a uint64_t through a
+    // uint32_t pointer). That breaks C's strict aliasing rule, and current gcc versions reorder such
+    // reads before the writes at -O3, which silently produces wrong plots.
+    #[cfg(not(target_env = "msvc"))]
+        shared_config.flag("-fno-strict-aliasing");
 
     #[cfg(not(target_env = "msvc"))]
         shared_config.flag("-mtune=native");
+
+    // The SIMD libraries must come before the base library (common.c) on the link line: static
+    // archives are searched in order, so write_seed/write_term would otherwise be unresolved.
+    #[cfg(any(feature = "simd", feature = "neon"))]
+        build(shared_config.clone());
 
     let mut config = shared_config.clone();
 
@@ -111,8 +126,6 @@ fn main() {
         }
     }
 
-    #[cfg(any(feature = "simd", feature = "neon"))]
-        build(shared_config);
 }
 
 fn generate_bindings() {
