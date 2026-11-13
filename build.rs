@@ -4,6 +4,11 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // cc prints rerun-if-env-changed lines, and with any rerun-if line cargo no longer reruns the
+    // build script when other files change. Without these, changed C sources are not recompiled.
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src");
+
     let mut shared_config = cc::Build::new();
 
     #[cfg(target_env = "msvc")]

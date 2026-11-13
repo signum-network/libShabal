@@ -35,6 +35,12 @@ jobs:
         run: cargo test --release --features ${{ matrix.features }}
       - name: Build
         run: cargo build --release --features ${{ matrix.features }}
+      # a shared library links with unresolved symbols, they only fail when Java loads it
+      - name: No unresolved symbols
+        if: runner.os == 'Linux'
+        run: |
+          unresolved=$(nm -D --undefined-only target/release/${{ matrix.library }} | awk '$1 == "U" && $2 !~ /@/')
+          if [ -n "$unresolved" ]; then echo "Unresolved symbols: $unresolved"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
