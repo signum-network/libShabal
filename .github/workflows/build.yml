@@ -7,29 +7,27 @@ on:
   pull_request:
 
 jobs:
-  build:
+  # Built in manylinux_2_28 (glibc 2.28), so the libraries load on Debian 10+, Ubuntu 18.10+,
+  # RHEL 8+ and Raspberry Pi OS buster+. Building on the runner itself would require its glibc.
+  build-linux:
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: linux-x86-64
             os: ubuntu-latest
+            container: quay.io/pypa/manylinux_2_28_x86_64
             features: simd
-            library: libshabal.so
           - name: linux-aarch64
             os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
             features: neon
-            library: libshabal.so
-          - name: win32-x86-64
-            os: windows-latest
-            features: simd
-            library: shabal.dll
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: CPU extensions
-        if: runner.os == 'Linux'
         run: grep -m1 -o -w -E 'sse2|avx|avx2|avx512f|asimd' /proc/cpuinfo | sort -u | tr '\n' ' ' || true
       - name: Test
         run: cargo test --release --features ${{ matrix.features }}
@@ -37,14 +35,32 @@ jobs:
         run: cargo build --release --features ${{ matrix.features }}
       # a shared library links with unresolved symbols, they only fail when Java loads it
       - name: No unresolved symbols
-        if: runner.os == 'Linux'
         run: |
-          unresolved=$(nm -D --undefined-only target/release/${{ matrix.library }} | awk '$1 == "U" && $2 !~ /@/')
+          unresolved=$(nm -D --undefined-only target/release/libshabal.so | awk '$1 == "U" && $2 !~ /@/')
           if [ -n "$unresolved" ]; then echo "Unresolved symbols: $unresolved"; exit 1; fi
+      - name: Requires at most glibc 2.28
+        run: |
+          newest=$(objdump -T target/release/libshabal.so | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1)
+          echo "newest required: $newest"
+          [ "$(printf '%s\nGLIBC_2.28\n' "$newest" | sort -V | tail -1)" = "GLIBC_2.28" ]
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: target/release/${{ matrix.library }}
+          path: target/release/libshabal.so
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        run: cargo test --release --features simd
+      - name: Build
+        run: cargo build --release --features simd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win32-x86-64
+          path: target/release/shabal.dll
 
   # one universal library for Intel and Apple Silicon Macs
   build-darwin:
@@ -72,7 +88,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build, build-darwin]
+    needs: [build-linux, build-windows, build-darwin]
     runs-on: ubuntu-latest
     permissions:
       contents: write

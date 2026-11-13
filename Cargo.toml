@@ -1,6 +1,6 @@
 [package]
 name = "libshabal"
-version = "1.4.1"
+version = "1.5.0"
 authors = ["Harry Phillips <harryjamesphillips@gmail.com>"]
 edition = "2018"
 build = "build.rs"
