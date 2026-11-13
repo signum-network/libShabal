@@ -121,12 +121,12 @@ static VERSION: Lazy<CString> = Lazy::new(|| {
 });
 
 #[no_mangle]
-pub extern fn libshabal_version() -> *const u8 {
+pub extern "C" fn libshabal_version() -> *const u8 {
     return VERSION.as_ptr() as *const u8;
 }
 
 #[no_mangle]
-pub extern fn shabal_findBestDeadlineDirect(
+pub extern "C" fn shabal_findBestDeadlineDirect(
     scoops: *const u8,
     nonce_count: u64,
     gensig: *const u8,
@@ -157,7 +157,7 @@ pub extern fn shabal_findBestDeadlineDirect(
 }
 
 #[no_mangle]
-pub extern fn shabal_init() {
+pub extern "C" fn shabal_init() {
     static INITIALIZE: Once = Once::new();
     INITIALIZE.call_once(|| {
         let supported_extension: &SimdExtension = &simd::SUPPORTED_SIMD_EXTENSION;
@@ -197,7 +197,7 @@ pub extern fn shabal_init() {
 }
 
 #[no_mangle]
-pub extern fn shabal_findBestDeadline(
+pub extern "C" fn shabal_findBestDeadline(
     scoops: *const u8,
     nonce_count: u64,
     gensig: *const u8,
@@ -217,7 +217,7 @@ pub extern fn shabal_findBestDeadline(
 /// This implementation of Shabal256 is not particularly
 /// fast but is here for completeness.
 #[no_mangle]
-pub extern fn shabal256_new() -> *mut c_void {
+pub extern "C" fn shabal256_new() -> *mut c_void {
     return shabal::shabal256_new()
 }
 
@@ -225,7 +225,7 @@ pub extern fn shabal256_new() -> *mut c_void {
 ///
 /// `shabal` is the pointer to the instance returned from `shabal256_new()`
 #[no_mangle]
-pub extern fn shabal256_destroy(shabal: *mut c_void) {
+pub extern "C" fn shabal256_destroy(shabal: *mut c_void) {
     shabal::shabal256_destroy(shabal)
 }
 
@@ -233,7 +233,7 @@ pub extern fn shabal256_destroy(shabal: *mut c_void) {
 ///
 /// `shabal` is the pointer to the instance returned from `shabal256_new()`
 #[no_mangle]
-pub extern fn shabal256_reset(shabal: *mut c_void) {
+pub extern "C" fn shabal256_reset(shabal: *mut c_void) {
     shabal::shabal256_reset(shabal);
 }
 
@@ -243,7 +243,7 @@ pub extern fn shabal256_reset(shabal: *mut c_void) {
 ///
 /// Inputs data into the digest from `data` starting at `offset` of length `len`
 #[no_mangle]
-pub extern fn shabal256_update(shabal: *mut c_void, data: *const u8, offset: usize, len: usize) {
+pub extern "C" fn shabal256_update(shabal: *mut c_void, data: *const u8, offset: usize, len: usize) {
     shabal::shabal256_update(shabal, data, offset, len);
 }
 
@@ -253,7 +253,7 @@ pub extern fn shabal256_update(shabal: *mut c_void, data: *const u8, offset: usi
 ///
 /// `buffer` must have 32 bytes available from `offset` otherwise this will attempt to write beyond the array.
 #[no_mangle]
-pub extern fn shabal256_digest(shabal: *mut c_void, buffer: *mut u8, offset: usize) {
+pub extern "C" fn shabal256_digest(shabal: *mut c_void, buffer: *mut u8, offset: usize) {
     shabal::shabal256_digest(shabal, buffer, offset);
 }
 
@@ -263,7 +263,7 @@ pub extern fn shabal256_digest(shabal: *mut c_void, buffer: *mut u8, offset: usi
 ///
 /// `nonce_count` counts from 1 - 0 is no plots and will do nothing.
 #[no_mangle]
-pub extern fn create_plots(
+pub extern "C" fn create_plots(
     account_id: u64,
     start_nonce: u64,
     nonce_count: u64,
@@ -304,7 +304,7 @@ pub extern fn create_plots(
 ///
 /// `plot_buffer` must be correct size - no size checks are performed.
 #[no_mangle]
-pub extern fn create_plot(
+pub extern "C" fn create_plot(
     account_id: u64,
     nonce: u64,
     poc_version: u8,
@@ -326,7 +326,7 @@ pub extern fn create_plot(
 ///
 /// `plot_buffer` must be correct size - no size checks are performed.
 #[no_mangle]
-pub extern fn create_scoop(
+pub extern "C" fn create_scoop(
     account_id: u64,
     nonce: u64,
     scoop: u32,
@@ -348,7 +348,7 @@ pub extern fn create_scoop(
 }
 
 #[no_mangle]
-pub extern fn curve25519_get_public_key(private_key: *mut u8, public_key_buffer: *mut u8) {
+pub extern "C" fn curve25519_get_public_key(private_key: *mut u8, public_key_buffer: *mut u8) {
     unsafe {
         let private_key_borrowed = slice::from_raw_parts_mut(private_key, 32);
         let public_key_buffer_borrowed = slice::from_raw_parts_mut(public_key_buffer, 32);
@@ -357,7 +357,7 @@ pub extern fn curve25519_get_public_key(private_key: *mut u8, public_key_buffer:
 }
 
 #[no_mangle]
-pub extern fn curve25519_get_shared_secret(private_key: *mut u8, public_key: *mut u8, shared_secret_buffer: *mut u8) {
+pub extern "C" fn curve25519_get_shared_secret(private_key: *mut u8, public_key: *mut u8, shared_secret_buffer: *mut u8) {
     unsafe {
         let private_key_borrowed = slice::from_raw_parts_mut(private_key, 32);
         let public_key_borrowed = slice::from_raw_parts_mut(public_key, 32);
@@ -367,7 +367,7 @@ pub extern fn curve25519_get_shared_secret(private_key: *mut u8, public_key: *mu
 }
 
 #[no_mangle]
-pub extern fn curve25519_sign(private_key: *mut u8, message_sha256: *const u8, signature_buffer: *mut u8) {
+pub extern "C" fn curve25519_sign(private_key: *mut u8, message_sha256: *const u8, signature_buffer: *mut u8) {
     unsafe {
         let private_key_borrowed = slice::from_raw_parts_mut(private_key, 32);
         let message_sha256_borrowed = slice::from_raw_parts(message_sha256, 32);
@@ -379,7 +379,7 @@ pub extern fn curve25519_sign(private_key: *mut u8, message_sha256: *const u8, s
 /// `enforce_canonical` and the return value are u8 bools where 0 represents false and 1 represents true.
 /// So, a return value of 1 indicates successful verification and a return value of 0 indicates unsuccessful verification.
 #[no_mangle]
-pub extern fn curve25519_verify(public_key: *mut u8, signature: *const u8, message_sha256: *const u8, enforce_canonical: u8) -> u8 {
+pub extern "C" fn curve25519_verify(public_key: *mut u8, signature: *const u8, message_sha256: *const u8, enforce_canonical: u8) -> u8 {
     unsafe {
         let public_key_borrowed = slice::from_raw_parts_mut(public_key, 32);
         let signature_borrowed = slice::from_raw_parts(signature, 64);

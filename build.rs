@@ -17,6 +17,11 @@ fn main() {
 
     #[cfg(not(target_env = "msvc"))]
         shared_config.flag("-std=c99");
+    // The SIMD code reads values through pointers of other types (e.g. a uint64_t through a
+    // uint32_t pointer). That breaks C's strict aliasing rule, and current gcc versions reorder such
+    // reads before the writes at -O3, which silently produces wrong plots.
+    #[cfg(not(target_env = "msvc"))]
+        shared_config.flag("-fno-strict-aliasing");
 
     #[cfg(not(target_env = "msvc"))]
         shared_config.flag("-mtune=native");
