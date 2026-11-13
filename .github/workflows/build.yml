@@ -28,6 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: CPU extensions
+        if: runner.os == 'Linux'
+        run: grep -m1 -o -w -E 'sse2|avx|avx2|avx512f|asimd' /proc/cpuinfo | sort -u | tr '\n' ' ' || true
       - name: Test
         run: cargo test --release --features ${{ matrix.features }}
       - name: Build

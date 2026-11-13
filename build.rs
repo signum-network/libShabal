@@ -26,6 +26,11 @@ fn main() {
     #[cfg(not(target_env = "msvc"))]
         shared_config.flag("-mtune=native");
 
+    // The SIMD libraries must come before the base library (common.c) on the link line: static
+    // archives are searched in order, so write_seed/write_term would otherwise be unresolved.
+    #[cfg(any(feature = "simd", feature = "neon"))]
+        build(shared_config.clone());
+
     let mut config = shared_config.clone();
 
     config
@@ -116,8 +121,6 @@ fn main() {
         }
     }
 
-    #[cfg(any(feature = "simd", feature = "neon"))]
-        build(shared_config);
 }
 
 fn generate_bindings() {
