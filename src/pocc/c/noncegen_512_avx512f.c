@@ -5,9 +5,9 @@
 #include "mshabal_512_avx512f.h"
 #include "sph_shabal.h"
 
-sph_shabal_context global_32;
-mshabal512_context global_512;
-mshabal512_context_fast global_512_fast;
+static sph_shabal_context global_32;
+static mshabal512_context global_512;
+static mshabal512_context_fast global_512_fast;
 
 void init_noncegen_avx512f() {
     sph_shabal256_init(&global_32);
@@ -331,3 +331,11 @@ void noncegen_avx512(char *cache,
     free(buffer);
     free(final);
 }
+
+#define NG_LANES MSHABAL512_VECTOR_SIZE
+#define NG_VEC __m512i
+#define NG_CTX_FAST mshabal512_context_fast
+#define NG_GLOBAL_FAST global_512_fast
+#define NG_HASH_FAST mshabal_hash_fast_avx512f
+#define NG_SCOOPS_FUNC noncegen_scoops_avx512f
+#include "noncegen_scoops_impl.h"

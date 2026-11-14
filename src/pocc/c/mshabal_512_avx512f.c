@@ -720,7 +720,8 @@ void mshabal_hash_fast_avx512f(mshabal512_context_fast *sc, void *message, void 
     one = _mm512_set1_epi32(C32(0xFFFFFFFF));
 
     // round 1
-#define M(i) _mm512_load_si512((__m512i *)message + i)
+// unaligned: the message comes from malloc or from Java arrays, without 64 byte alignment
+#define M(i) _mm512_loadu_si512((__m512i *)message + i)
 
     while (num-- > 0) {
         for (j = 0; j < 16; j++) B[j] = _mm512_add_epi32(B[j], M(j));
@@ -1019,7 +1020,8 @@ void mshabal_deadline_fast_avx512f(mshabal512_context_fast *sc, void *message, v
     one = _mm512_set1_epi32(C32(0xFFFFFFFF));
 
     // round 1
-#define M(i) _mm512_load_si512((__m512i *)message + i)
+// unaligned: the message comes from malloc or from Java arrays, without 64 byte alignment
+#define M(i) _mm512_loadu_si512((__m512i *)message + i)
 
     for (j = 0; j < 16; j++) B[j] = _mm512_add_epi32(B[j], M(j));
 

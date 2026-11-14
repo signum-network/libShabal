@@ -1,6 +1,6 @@
 [package]
 name = "libshabal"
-version = "1.4.1"
+version = "1.5.0"
 authors = ["Harry Phillips <harryjamesphillips@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -24,3 +24,7 @@ sha2 = "0.8.1"
 cc = "1.0.50"
 cfg-if = "0.1.10"
 cbindgen = "0.13.1"
+
+# the PoC code is unusably slow without optimization, also in tests
+[profile.test]
+opt-level = 3
