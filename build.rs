@@ -62,6 +62,7 @@ fn main() {
                 config
                     .file("src/pocc/c/mshabal_128_neon.c")
                     .file("src/pocc/c/shabal_neon.c")
+                    .file("src/pocc/c/noncegen_128_neon.c")
                     .compile("shabal_neon");
              }
          }

@@ -106,6 +106,7 @@ cfg_if! {
     if #[cfg(feature = "neon")] {
         extern "C" {
             pub fn init_shabal_neon();
+            pub fn init_noncegen_neon();
             pub fn find_best_deadline_neon(
                 scoops: *const u8,
                 nonce_count: u64,
@@ -190,6 +191,7 @@ pub extern "C" fn shabal_init() {
             simd::SimdExtension::NEON => {
                 #[cfg(feature = "neon")] unsafe {
                     init_shabal_neon();
+                    init_noncegen_neon();
                 }
             },
             _ => {}
@@ -357,7 +359,10 @@ pub extern "C" fn create_scoop(
 /// from `scoop_buffer_offset`.
 ///
 /// Returns 0 on success, -1 if a scoop number is not below 4096, -2 if the SIMD implementation
-/// failed (memory allocation) and -3 for null pointers.
+/// failed (memory allocation) and -3 for null pointers or inconsistent lengths.
+///
+/// Calls `shabal_init()` itself: the SIMD implementations copy a global Shabal context that only
+/// `shabal_init()` sets up, and would otherwise silently produce wrong scoops.
 #[no_mangle]
 pub extern "C" fn create_scoops(
     account_ids: *const u64,

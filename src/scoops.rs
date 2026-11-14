@@ -27,6 +27,11 @@ extern "C" {
     fn noncegen_scoops_avx512f(account_ids: *const u64, nonces: *const u64, scoops: *const u32, count: u64, poc_version: u8, out: *mut u8) -> i32;
 }
 
+#[cfg(feature = "neon")]
+extern "C" {
+    fn noncegen_scoops_neon(account_ids: *const u64, nonces: *const u64, scoops: *const u32, count: u64, poc_version: u8, out: *mut u8) -> i32;
+}
+
 /// The SIMD implementation for the detected CPU extension, with its number of lanes.
 fn simd_scoops_fn(extension: &simd::SimdExtension) -> Option<(usize, SimdScoopsFn)> {
     match extension {
@@ -38,6 +43,8 @@ fn simd_scoops_fn(extension: &simd::SimdExtension) -> Option<(usize, SimdScoopsF
         simd::SimdExtension::AVX => Some((4, noncegen_scoops_avx)),
         #[cfg(feature = "simd")]
         simd::SimdExtension::SSE2 => Some((4, noncegen_scoops_sse2)),
+        #[cfg(feature = "neon")]
+        simd::SimdExtension::NEON => Some((4, noncegen_scoops_neon)),
         _ => None,
     }
 }
@@ -62,6 +69,9 @@ pub fn create_scoops(
     poc_version: u8,
     out: &mut [u8],
 ) -> Result<(), ScoopsError> {
+    // the SIMD implementations copy the global Shabal context that shabal_init sets up; without it
+    // they would silently produce wrong scoops (runs once, then it is a cheap check)
+    crate::shabal_init();
     create_scoops_with(simd_scoops_fn(&simd::SUPPORTED_SIMD_EXTENSION), account_ids, nonces, scoops, poc_version, out)
 }
 
@@ -212,6 +222,13 @@ mod tests {
                 implementations.push(Some((16, noncegen_scoops_avx512f)));
             }
         }
+        #[cfg(feature = "neon")]
+        {
+            if matches!(*simd::SUPPORTED_SIMD_EXTENSION, simd::SimdExtension::NEON) {
+                // shabal_init above has set up the NEON context
+                implementations.push(Some((4, noncegen_scoops_neon)));
+            }
+        }
         implementations
     }
 
@@ -283,6 +300,15 @@ mod tests {
             noncegen_scoops_sse2(account_ids.as_ptr(), nonces.as_ptr(), scoops.as_ptr(), 5, 2, out.as_mut_ptr())
         };
         assert_eq!(status, -1);
+    }
+
+    #[cfg(feature = "neon")]
+    #[test]
+    fn neon_is_used_where_available() {
+        crate::shabal_init();
+        if matches!(*simd::SUPPORTED_SIMD_EXTENSION, simd::SimdExtension::NEON) {
+            assert_eq!(simd_scoops_fn(&simd::SUPPORTED_SIMD_EXTENSION).map(|f| f.0), Some(4));
+        }
     }
 
     #[test]
